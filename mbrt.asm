@@ -51,10 +51,6 @@ org 0x7c00
 
 			mov al, byte [float_xchg]
 
-			; TODO: for testing
-			mov al, dl
-			shr al, 4
-
 			mov ah, 0x0C
 			mov bh, 0
 			int 0x10
@@ -70,14 +66,65 @@ org 0x7c00
 	jmp $
 
 rand_01:
-	fldln2
+	; xorshift32 ported from https://en.wikipedia.org/wiki/Xorshift
+	pusha
+	mov cx, word [rand_01_seed]
+	mov dx, word [rand_01_seed+2]
+
+	; x ^= x << 13
+	mov ax, cx
+	mov si, cx
+	mov di, dx
+
+	shl ax, 13
+	xor cx, ax
+
+	shr si, 3
+	shl di, 13
+	or di, si
+	xor dx, di
+
+	; x ^= x >> 17
+	mov di, dx
+	shr di, 1
+	xor cx, di
+
+	; x ^= x << 5
+	mov ax, cx
+	mov si, cx
+	mov di, dx
+
+	shl ax, 5
+	xor cx, ax
+
+	shr si, 11
+	shl di, 5
+	or di, si
+	xor dx, di
+
+	mov word [rand_01_seed], cx
+	mov word [rand_01_seed+2], dx
+
+	; generate float
+	mov word [rand_01_float_xchg], cx
+	shr dx, 9
+	or dx, 0x3F80
+	mov word [rand_01_float_xchg+2], dx
+
+	fld dword [rand_01_float_xchg]
+	fld1
+	fsubp st1, st0
+
+	popa
 	ret
 
 	WIDTH equ 640
 	HEIGHT equ 480
 
+	rand_01_seed: dd 0x3BADF00D
+	rand_01_float_xchg: dd 0
 	constant_15: dw 15
-	float_xchg: dw 0
+	float_xchg: dd 0
 
 times 510-($-$$) db 0
 dw 0xAA55
