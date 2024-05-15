@@ -68,42 +68,24 @@ org 0x7c00
 rand_01:
 	; xorshift32 ported from https://en.wikipedia.org/wiki/Xorshift
 	pusha
-	mov cx, word [rand_01_seed]
-	mov dx, word [rand_01_seed+2]
+	mov si, word [rand_01_seed]
+	mov di, word [rand_01_seed+2]
 
 	; x ^= x << 13
-	mov ax, cx
-	mov si, cx
-	mov di, dx
-
-	shl ax, 13
-	xor cx, ax
-
-	shr si, 3
-	shl di, 13
-	or di, si
-	xor dx, di
+	mov cx, 0x030D
+	call rand_01_shl_xor
 
 	; x ^= x >> 17
-	mov di, dx
-	shr di, 1
-	xor cx, di
+	mov dx, di
+	shr dx, 1
+	xor si, dx
 
 	; x ^= x << 5
-	mov ax, cx
-	mov si, cx
-	mov di, dx
+	mov cx, 0x0B05
+	call rand_01_shl_xor
 
-	shl ax, 5
-	xor cx, ax
-
-	shr si, 11
-	shl di, 5
-	or di, si
-	xor dx, di
-
-	mov word [rand_01_seed], cx
-	mov word [rand_01_seed+2], dx
+	mov word [rand_01_seed], si
+	mov word [rand_01_seed+2], di
 
 	; generate float
 	mov word [rand_01_float_xchg], cx
@@ -117,6 +99,21 @@ rand_01:
 
 	popa
 	ret
+
+	rand_01_shl_xor:
+		mov ax, si
+		mov bx, si
+		mov dx, di
+
+		shl ax, cl
+		xor si, ax
+
+		shl dx, cl
+		mov cl, ch
+		shr bx, cl
+		or dx, bx
+		xor di, dx
+		ret
 
 	WIDTH equ 640
 	HEIGHT equ 480
