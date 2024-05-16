@@ -33,34 +33,68 @@ org 0x7c00
 	mov ax, 0xFFFF
 	mov ss, ax
 	mov sp, ax
+
+	sub sp, 108
 	
 	; TODO:
 	finit
 
 	xor dx, dx
+	fld dword [ray_y_origin]
 	y_loop:
 		xor cx, cx
+		fld1
+		fchs
 		x_loop:
-			; TODO: produce color in the range [0, 1] and store it at the top of the float stack
+			mov bp, sp ; TODO
+			fnsave [ss:bp]
+			frstor [ss:bp]
+
+			; Normalize ray
+			fld st0
+			fmul st0, st1
+			fld st2
+			fmul st0, st3
+			faddp
+			fld1
+			faddp
+			fsqrt
+			fdiv st2, st0
+			fdivp
 			
-			call rand_01
+			fxch
+			fabs
+			fxch
+			fabs ; TODO
+
+			faddp
+			fld1
+			fld1
+			faddp
+			fdivp
 
 			fild word [constant_15]
 			fmulp
-			fistp word [float_xchg]
+			fistp word [light_to_color_float_xchg]
 
-			mov al, byte [float_xchg]
+			mov bp, sp ; TODO
+
+			mov al, byte [light_to_color_float_xchg]
 
 			mov ah, 0x0C
 			mov bh, 0
 			int 0x10
 
+			frstor [ss:bp]
+			fadd dword [ray_x_step]
 			inc cx
-			cmp cx, WIDTH
+			cmp cx, 640
 			jb x_loop
 
+		fincstp
+		fadd dword [ray_y_step]
 		inc dx
-		cmp dx, HEIGHT
+		cmp dx, 480
 		jb y_loop
 
 	jmp $
@@ -115,13 +149,17 @@ rand_01:
 		xor di, dx
 		ret
 
-	WIDTH equ 640
-	HEIGHT equ 480
+	ray_y_origin: dd -1.0
+	ray_y_step: dd 0.0041666666666
+	ray_x_step: dd 0.003125
+
+	constant_15: dw 15
+	light_to_color_float_xchg: dd 0xFFFFFFFF
 
 	rand_01_seed: dd 0x3BADF00D
 	rand_01_float_xchg: dd 0
-	constant_15: dw 15
-	float_xchg: dd 0
+
+	ray_sphere_r_sq_param: dd 0x12345678
 
 times 510-($-$$) db 0
 dw 0xAA55
