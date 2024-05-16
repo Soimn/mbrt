@@ -86,13 +86,13 @@ org 0x7c00
 			int 0x10
 
 			frstor [ss:bp]
-			fadd dword [ray_x_step]
+			fadd dword [ray_step]
 			inc cx
 			cmp cx, 640
 			jb x_loop
 
 		fincstp
-		fadd dword [ray_y_step]
+		fadd dword [ray_step]
 		inc dx
 		cmp dx, 480
 		jb y_loop
@@ -149,9 +149,8 @@ rand_01:
 		xor di, dx
 		ret
 
-	ray_y_origin: dd -1.0
-	ray_y_step: dd 0.0041666666666
-	ray_x_step: dd 0.003125
+	ray_y_origin: dd -0.75
+	ray_step: dd 0.003125
 
 	constant_15: dw 15
 	light_to_color_float_xchg: dd 0xFFFFFFFF
