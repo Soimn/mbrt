@@ -70,6 +70,9 @@ org 0x7c00
 			no_color:
 				fldz
 			color_end:
+
+			fincstp
+			call rand_01
 			
 			fild word [constant_15]
 			fmulp
@@ -98,54 +101,14 @@ org 0x7c00
 	jmp $
 
 rand_01:
-	; xorshift32 ported from https://en.wikipedia.org/wiki/Xorshift
-	pusha
-	mov si, word [rand_01_seed]
-	mov di, word [rand_01_seed+2]
-
-	; x ^= x << 13
-	mov cx, 0x030D
-	call rand_01_shl_xor
-
-	; x ^= x >> 17
-	mov dx, di
-	shr dx, 1
-	xor si, dx
-
-	; x ^= x << 5
-	mov cx, 0x0B05
-	call rand_01_shl_xor
-
-	mov word [rand_01_seed], si
-	mov word [rand_01_seed+2], di
-
-	; generate float
-	mov word [rand_01_float_xchg], cx
-	shr dx, 9
-	or dx, 0x3F80
-	mov word [rand_01_float_xchg+2], dx
-
-	fld dword [rand_01_float_xchg]
 	fld1
-	fsubp st1, st0
-
-	popa
+	fld dword [rand_01_seed]
+	fldpi
+	fmulp
+	fadd dword [rand_01_phi]
+	fprem1
+	fst dword [rand_01_seed]
 	ret
-
-	rand_01_shl_xor:
-		mov ax, si
-		mov bx, si
-		mov dx, di
-
-		shl ax, cl
-		xor si, ax
-
-		shl dx, cl
-		mov cl, ch
-		shr bx, cl
-		or dx, bx
-		xor di, dx
-		ret
 
 	; fpu stack
 	; v_y, v_x
@@ -228,8 +191,8 @@ rand_01:
 	constant_15: dw 15
 	light_to_color_float_xchg: dd 0xFFFFFFFF
 
-	rand_01_seed: dd 0x3BADF00D
-	rand_01_float_xchg: dd 0
+	rand_01_seed: dd 3.1415926535
+	rand_01_phi: dd 1.618033988749894848204586834365638117
 
 	ray_sphere_sw: dw 0
 
