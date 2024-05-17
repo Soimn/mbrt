@@ -34,10 +34,8 @@ org 0x7c00
 	mov ss, ax
 	mov sp, ax
 
+	fninit
 	sub sp, 108
-	
-	; TODO:
-	finit
 
 	xor dx, dx
 	fld dword [ray_y_origin]
@@ -52,27 +50,27 @@ org 0x7c00
 
 			; Normalize ray
 			fld st0
-			fmul st0, st1
+			fmul st0, st0
 			fld st2
-			fmul st0, st3
+			fmul st0, st0
 			faddp
 			fld1
 			faddp
 			fsqrt
 			fdiv st2, st0
 			fdivp
+
+			mov di, center_sphere
+			call ray_sphere
+
+			cmp al, 0
+			je no_color
+				fld1
+				jmp color_end
+			no_color:
+				fldz
+			color_end:
 			
-			fxch
-			fabs
-			fxch
-			fabs ; TODO
-
-			faddp
-			fld1
-			fld1
-			faddp
-			fdivp
-
 			fild word [constant_15]
 			fmulp
 			fistp word [light_to_color_float_xchg]
@@ -92,7 +90,7 @@ org 0x7c00
 			jb x_loop
 
 		fincstp
-		fadd dword [ray_step]
+		fsub dword [ray_step]
 		inc dx
 		cmp dx, 480
 		jb y_loop
@@ -149,7 +147,82 @@ rand_01:
 		xor di, dx
 		ret
 
-	ray_y_origin: dd -0.75
+	; fpu stack
+	; v_y, v_x
+	; ->
+	; v_y, v_x, t
+	; registers
+	; di: address of c_x, c_y, c_z, r_sq
+	; ->
+	; di: address of c_x, c_y, c_z, r_sq
+	; ax: did_hit
+	ray_sphere:
+		; fpu stack
+		; v_y, v_x
+
+		; Compute <v, c>
+		fld st0
+		fmul dword [di]
+		fld st2
+		fmul dword [di+4]
+		faddp
+		fld dword [di+8]
+		fsubp
+
+		; fpu stack
+		; v_y, v_x, <v, c>
+
+		; Compute <c, c>
+		fld dword [di]
+		fmul st0, st0
+		fld dword [di+4]
+		fmul st0, st0
+		faddp
+		fld dword [di+8]
+		fmul st0, st0
+		faddp
+
+		; fpu stack
+		; v_y, v_x, <v, c>, <c, c>
+
+		; Compute <c, c> - r_sq
+		fsub dword [di+12]
+
+		; fpu stack
+		; v_y, v_x, <v, c>, <c, c> - r_sq
+
+		; Compute <v, c>^2
+		fld st1
+		fmul st0, st0
+
+		; fpu stack
+		; v_y, v_x, <v, c>, <c, c> - r_sq, <v, c>^2
+
+		; Compute <v, c>^2 - <c, c> + r_sq
+		fsubrp
+
+		; fpu stack
+		; v_y, v_x, <v, c>, <v, c>^2 - <c, c> + r_sq
+		
+		; Compute t
+		fsqrt ; NOTE: produces Invalid Op exception when st0 is negative, which is used later
+		fsubp
+		
+		; fpu stack
+		; v_y, v_x, t
+
+		; Determine is discriminant is negative and if t is negative
+		ftst
+		fstsw word [ray_sphere_sw]
+		fnclex
+
+		mov ax, word [ray_sphere_sw]
+		and ah, al
+		and al, 1
+
+		ret
+
+	ray_y_origin: dd 0.75
 	ray_step: dd 0.003125
 
 	constant_15: dw 15
@@ -158,7 +231,10 @@ rand_01:
 	rand_01_seed: dd 0x3BADF00D
 	rand_01_float_xchg: dd 0
 
-	ray_sphere_r_sq_param: dd 0x12345678
+	ray_sphere_sw: dw 0
+
+	center_sphere: dd 0.0, -6.0, -20.0, 0.1
+
 
 times 510-($-$$) db 0
 dw 0xAA55
