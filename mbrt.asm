@@ -8,15 +8,27 @@ org 0x7c00
 	; Set DAC registers to interesting colors
 	xor bx, bx
 	xor cx, cx
-	xor dx, dx
+	mov dh, 13
 	mov ax, 0x1010
 	set_dac_loop:
 		int 0x10
-		add cx, 0x0404
-		add dh, 0x04
+		add cx, 4
+		add dh, 4
 		inc bx
-		cmp bx, 16
+		cmp bx, 2
 		jb set_dac_loop
+	set_dac_loop_2:
+		int 0x10
+		add cx, 4
+		sub dh, 1
+		inc bx
+		cmp bx, 13
+		jb set_dac_loop_2
+	
+	mov bx, 13
+	mov cx, 0xFEFE
+	mov dh, 0xFE
+	int 0x10
 
 	; Set palette
 	mov ax, 0x1000
