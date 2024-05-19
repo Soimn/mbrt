@@ -94,33 +94,27 @@ rand_01:
 	ret
 
 ; fpu stack
-; v_x, v_y, v_z, q_x, q_y, q_z
+; v_x, v_y, v_z, q_y, q_z
 ; ->
 ; v_x, v_y, v_z, t
 test_sphere:
 
 	; Compute <v, q>
 	; fpu stack
-	; v_x, v_y, v_z, q_x, q_y, q_z
-	fld st5
-	fmul st0, st3
-	fld st5
-	fmul st0, st3
+	; v_x, v_y, v_z, q_y, q_z
+	fld st3
+	fmul st0, st2
+	fld st3
+	fmul st0, st2
 	faddp
-	fld st4
-	fmul st2
-	faddp
-	fxch st3
+	fxch st2
 	; fpu stack
-	; v_x, v_y, v_z, <v, q>, q_y, q_z, q_x
+	; v_x, v_y, v_z, <v, q>, q_z, q_y,
 
 	; Compute <q, q> - r^2
 	; fpu stack
-	; v_x, v_y, v_z, <v, q>, q_y, q_z, q_x
+	; v_x, v_y, v_z, <v, q>, q_z, q_y
 	fmul st0, st0
-	fxch
-	fmul st0, st0
-	faddp
 	fxch
 	fmul st0, st0
 	faddp
@@ -131,11 +125,12 @@ test_sphere:
 	; Compute <v, q>/<v, v> and (<q, q> - r^2)/<v, v>
 	; fpu stack
 	; v_x, v_y, v_z, <v, q>, <q, q> - r^2
-	mov cx, 3
-	div_loop:
-		fld st4
-		fmul st0, st0
-	loop div_loop
+	fld st4
+	fmul st0, st0
+	fld st4
+	fmul st0, st0
+	fld st4
+	fmul st0, st0
 	faddp
 	faddp
 	fdiv st2, st0
@@ -180,41 +175,52 @@ test_sphere:
 	ret
 
 trace_ray:
-	mov bx, 0
-	fld dword [ground_r_sq]
-	fstp dword [trace_ray_min_t]
+	mov cx, 2
+	fld1
+	fstp dword [trace_ray_color]
+	bounce_loop:
+		mov bx, 0
+		fld dword [ground_r_sq]
+		fstp dword [trace_ray_min_t]
 
-	mov si, 1
-	fldz  ; q_x  = 0
-	fldz  ; q_y  = 0
-	fldpi
-	fadd st0, st0
-	fchs  ; q_z  = -2pi
-	fldpi ; r_sq = pi
-	fstp dword [lambda_0]
-	call test_sphere
+		mov si, 1
+		fldz  ; q_y  = 0
+		fldpi
+		fadd st0, st0
+		fchs  ; q_z  = -2pi
+		fldpi ; r_sq = pi
+		fstp dword [lambda_0]
+		call test_sphere
 
-	mov si, 2
-	fldz                    ; q_x = 0
-	fld dword [ground_y]    ; q_y  = $ground_y
-	fldz                    ; q_z  = 0
-	fld dword [ground_r_sq] ; r_sq = $ground_r_sq
-	fstp dword [lambda_0]
-	call test_sphere
+		mov si, 2
+		fld dword [ground_y]    ; q_y  = $ground_y
+		fldz                    ; q_z  = 0
+		fld dword [ground_r_sq] ; r_sq = $ground_r_sq
+		fstp dword [lambda_0]
+		call test_sphere
 
-	cmp bx, 0
-	je hit_sky
-		cmp bx, 1
-		jne hit_ground
+		cmp bx, 0
+		fld dword [trace_ray_color]
+		je hit_sky
+			cmp bx, 1
+			jne hit_ground
+				fld dword [ray_y_origin]
+				jmp diffuse_reflection
+			hit_ground:
+				fldlg2
+			diffuse_reflection:
+				mov cx, 1 ; TODO
+				jmp hit_end
+		hit_sky:
 			fld1
-			jmp hit_end
-		hit_ground:
-			fldz
-			jmp hit_end
-	hit_sky:
-		fldln2
-	hit_end:
+			mov cx, 1
+		hit_end:
+		fmulp
+		fstp dword [trace_ray_color]
 
+	loop bounce_loop
+
+	fld dword [trace_ray_color]
 	ret
 
 	ray_y_origin: dd 0.75
@@ -230,6 +236,7 @@ trace_ray:
 	ground_r_sq: dd 1.0e6
 	ground_y: dd -1001.752714447281309590393390427036516651063469065
 	trace_ray_min_t: dd 0
+	trace_ray_color: dd 0
 
 times 510-($-$$) db 0
 dw 0xAA55
