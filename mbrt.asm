@@ -30,27 +30,20 @@ org 0x7c00
 	mov ax, 0xA000
 	mov es, ax
 
-	; TODO: Possibly remove
-	mov ax, 0xFFFF
-	mov ss, ax
-	mov sp, ax
-
 	fninit
-	sub sp, 108
-	mov bp, sp
 
 	xor dx, dx
 	fld dword [ray_y_origin]
 	y_loop:
-		xor di, di
+		xor cx, cx
 		fld1
 		fchs
 		x_loop:
-			fnsave [ss:bp]
+			fnsave [0x7F00]
 
 			; Setup fpu stack
 			; v_x, v_y, v_z, q_x, q_y, q_z
-			frstor [ss:bp]
+			frstor [0x7F00]
 			fxch
 			fld1
 			fchs ; v_z = -1
@@ -59,19 +52,18 @@ org 0x7c00
 			
 			fild word [constant_15]
 			fmulp
-			fistp word [lambda_0]
+			fistp word [0x7E00]
 
 			mov ah, 0x0C
-			mov al, byte [lambda_0]
+			mov al, byte [0x7E00]
 			mov bh, 0
-			mov cx, di
 			int 0x10
 
-			frstor [ss:bp]
+			frstor [0x7F00]
 
 			fadd dword [ray_step]
-			inc di
-			cmp di, 640
+			inc cx
+			cmp cx, 640
 			jb x_loop
 
 		fincstp
@@ -82,145 +74,154 @@ org 0x7c00
 
 	jmp $
 
-; xorshift would be better but x' = (x*pi + golden_ratio) mod 1 looks random enough, and requires much less code
-rand_01:
-	fld1
-	fld dword [rand_01_seed]
-	fldpi
-	fmulp
-	fadd dword [rand_01_phi]
-	fprem1
-	fst dword [rand_01_seed]
-	ret
+trace_ray:
+	; Normalize v
+	; fpu stack
+	; v_x, v_y, v_z
+	fld st0
+	fmul st0, st0
+	fld st2
+	fmul st0, st0
+	faddp
+	fld st3
+	fmul st0, st0
+	faddp
+	fsqrt
+	fdiv st3, st0
+	fdiv st2, st0
+	fdivp
 
-; fpu stack
-; v_x, v_y, v_z, q_y, q_z
-; ->
-; v_x, v_y, v_z, t
-test_sphere:
+	; Setup sphere
+	; fpu stack
+	; v_x, v_y, v_z
+	fldpi
+	fldpi
+	fchs
+	; fpu stack
+	; v_x, v_y, v_z, r_sq, q_z
 
 	; Compute <v, q>
 	; fpu stack
-	; v_x, v_y, v_z, q_y, q_z
-	fld st3
-	fmul st0, st2
-	fld st3
-	fmul st0, st2
-	faddp
+	; v_x, v_y, v_z, r_sq, q_z
+	fld st0
+	fmul st0, st3
 	fxch st2
 	; fpu stack
-	; v_x, v_y, v_z, <v, q>, q_z, q_y,
+	; v_x, v_y, v_z, <v, q>, q_z, r_sq
 
 	; Compute <q, q> - r^2
 	; fpu stack
-	; v_x, v_y, v_z, <v, q>, q_z, q_y
-	fmul st0, st0
+	; v_x, v_y, v_z, <v, q>, q_z, r_sq
 	fxch
 	fmul st0, st0
-	faddp
-	fsub dword [lambda_0]
+	fsubrp
+	; fpu stack
+	; v_x, v_y, v_z, r_sq, <v, q>, <q, q> - r^2
+	
+	; Compute sqrt((<v, q>)^2 - (<q, q> - r^2))
 	; fpu stack
 	; v_x, v_y, v_z, <v, q>, <q, q> - r^2
-	
-	; Compute <v, q>/<v, v> and (<q, q> - r^2)/<v, v>
-	; fpu stack
-	; v_x, v_y, v_z, <v, q>, <q, q> - r^2
-	fld st4
-	fmul st0, st0
-	fld st4
-	fmul st0, st0
-	fld st4
-	fmul st0, st0
-	faddp
-	faddp
-	fdiv st2, st0
-	fdivp
-	; fpu stack
-	; v_x, v_y, v_z, <v, q>/<v, v>, (<q, q> - r^2)/<v, v>
-	
-	; Compute sqrt((<v, q>/<v, v>)^2 - (<q, q> - r^2)/<v, v>)
-	; fpu stack
-	; v_x, v_y, v_z, <v, q>/<v, v>, (<q, q> - r^2)/<v, v>
 	fld st1
 	fmul st0, st0
 	fsubrp
 	fsqrt ; causes an Invalid Op exception when the arg is negative, used to determine hit later
 	; fpu stack
-	; v_x, v_y, v_z, <v, q>/<v, v>, sqrt((<v, q>/<v, v>)^2 - (<q, q> - r^2)/<v, v>)
+	; v_x, v_y, v_z, <v, q>/<v, v>, sqrt((<v, q>)^2 - (<q, q> - r^2))
 
-	; Compute t and update min_t
+	; Compute t
 	; fpu stack
-	; v_x, v_y, v_z, <v, q>/<v, v>, sqrt((<v, q>/<v, v>)^2 - (<q, q> - r^2)/<v, v>)
+	; v_x, v_y, v_z, <v, q>/<v, v>, sqrt((<v, q>)^2 - (<q, q> - r^2))
 	fsubp
 	ftst
 	fstsw ax
 	fnclex
 	or al, ah
 	and al, 1
-	cmp al, 0
-	jne test_sphere_no_hit
-	fld dword [trace_ray_min_t]
-	fcomp st1
-	fstsw ax
-	and ah, 1
-	cmp ah, 0
-	jne test_sphere_no_hit
-	fst dword [trace_ray_min_t]
-	mov bx, si
-	test_sphere_no_hit:
-	fincstp
 	; fpu stack
-	; v_x, v_y, v_z
+	; v_x, v_y, v_z, t
 
-	ret
-
-trace_ray:
-	mov cx, 2
-	fld1
-	fstp dword [trace_ray_color]
-	bounce_loop:
-		mov bx, 0
-		fld dword [ground_r_sq]
-		fstp dword [trace_ray_min_t]
-
-		mov si, 1
-		fldz  ; q_y  = 0
-		fldpi
-		fadd st0, st0
-		fchs  ; q_z  = -2pi
-		fldpi ; r_sq = pi
-		fstp dword [lambda_0]
-		call test_sphere
-
-		mov si, 2
-		fld dword [ground_y]    ; q_y  = $ground_y
-		fldz                    ; q_z  = 0
-		fld dword [ground_r_sq] ; r_sq = $ground_r_sq
-		fstp dword [lambda_0]
-		call test_sphere
-
-		cmp bx, 0
-		fld dword [trace_ray_color]
-		je hit_sky
-			cmp bx, 1
-			jne hit_ground
-				fld dword [ray_y_origin]
-				jmp diffuse_reflection
-			hit_ground:
-				fldlg2
-			diffuse_reflection:
-				mov cx, 1 ; TODO
-				jmp hit_end
-		hit_sky:
-			fld1
-			mov cx, 1
-		hit_end:
+	cmp al, 0
+	jne hit_sky
+		; Compute intersection p
+		; fpu stack
+		; v_x, v_y, v_z, t
+		fmul st3, st0
+		fmul st2, st0
 		fmulp
-		fstp dword [trace_ray_color]
+		; fpu stack
+		; p_x, p_y, p_z
 
-	loop bounce_loop
+		; Compute normal
+		; fpu stack
+		; p_x, p_y, p_z
+		fld st2
+		fld st2
+		fld st2
+		fldpi
+		faddp
+		; fpu stack
+		; p_x, p_y, p_z, n_x, n_y, n_z
 
-	fld dword [trace_ray_color]
+		; Normalize normal
+		; fpu stack
+		; p_x, p_y, p_z, n_x, n_y, n_z
+		fld st2
+		fmul st0, st0
+		fld st2
+		fmul st0, st0
+		faddp
+		fld st1
+		fmul st0, st0
+		faddp
+		fsqrt
+		fdiv st3, st0
+		fdiv st2, st0
+		fdivp
+		; fpu stack
+		; p_x, p_y, p_z, n_x, n_y, n_z
+
+		; Compute <n, l>
+		; l is [-1, 1, lg2(e) + lg10(2)]
+		; fpu stack
+		; p_x, p_y, p_z, n_x, n_y, n_z
+		fldl2e
+		fldlg2
+		faddp
+		fmulp
+		fxch st2
+		fsubp
+		faddp
+
+		fldl2e
+		fldlg2
+		faddp
+		fmul st0, st0
+		fld1
+		fadd st1, st0
+		faddp
+		fsqrt
+		fdivp
+		; fpu stack
+		; p_x, p_y, p_z, <n, l>
+
+		; Multiply with albedo
+		; fpu stack
+		; p_x, p_y, p_z, <n, l>
+		fldln2
+		fmulp
+		; fpu stack
+		; p_x, p_y, p_z, L
+
+		jmp hit_end
+	hit_sky:
+		fld1
+		fldlg2
+		fld1
+		fadd st0, st0
+		fdivp
+		fsubp
+	hit_end:
+
 	ret
 
 	ray_y_origin: dd 0.75
@@ -228,15 +229,6 @@ trace_ray:
 
 	constant_15: dw 15
 
-	rand_01_seed: dd 2.718281828459045
-	rand_01_phi: dd 1.618033988749894848204586834365638117
-
-	lambda_0: dd 0
-
-	ground_r_sq: dd 1.0e6
-	ground_y: dd -1001.752714447281309590393390427036516651063469065
-	trace_ray_min_t: dd 0
-	trace_ray_color: dd 0
 
 times 510-($-$$) db 0
 dw 0xAA55
